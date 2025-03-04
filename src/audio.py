@@ -8,11 +8,11 @@ import config
 import pvporcupine as porcupine
 
 # ========== 配置音频参数 ==========
+porcupine = porcupine.create(access_key=config.PICO_KEY, keyword_paths=["./resources/こんにちは_ja_windows_v3_0_0.ppn"], model_path="./resources/porcupine_params_ja.pv")
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000  # 采样率 16kHz
-CHUNK = 1024  # 每帧数据大小
-DEVICE_INDEX = 1  # 你的麦克风设备索引
+CHUNK = porcupine.frame_length  # 每帧数据大小
 
 # 阈值设置（用于检测静音）
 SILENCE_THRESHOLD = 500  # 小于该值认为是静音
@@ -20,9 +20,6 @@ SILENCE_DURATION = 1  # 静音超过多少秒停止录音
 
 # 创建队列存储音频数据
 audio_queue = queue.Queue()
-
-# Initialize the Porcupine keyword detector
-porcupine = porcupine.create(access_key=config.PICO_KEY, keyword_paths=["./resources/こんにちは_ja_windows_v3_0_0.ppn"], model_path="./resources/porcupine_params_ja.pv")
 
 recording = False  # 是否在录音状态
 last_audio_time = time.time()  # 记录最后有声音的时间
@@ -37,18 +34,18 @@ def microphone_thread(speech_file_path):
                     channels=CHANNELS,
                     rate=RATE,
                     input=True,
-                    frames_per_buffer=CHUNK,
-                    input_device_index=DEVICE_INDEX)
+                    frames_per_buffer=CHUNK)
 
     print("麦克风输入线程启动...")
 
     try:
         while True:
             audio_data = stream.read(CHUNK)
+            audio_frame = np.frombuffer(audio_data, dtype=np.int16)
             audio_queue.put(audio_data)
 
             # 关键词检测
-            keyword_index = porcupine.process(audio_data)
+            keyword_index = porcupine.process(audio_frame)
             if keyword_index == 0:  # 检测到关键词
                 print("检测到 'porcupine' 关键词! 开始录音...")
                 recording = True
