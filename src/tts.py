@@ -10,14 +10,14 @@ def to_speech_wav(text, language):
     elif language == "en":
         text_language = "英文"
 
-    with open('./resource/ref.txt', 'r', encoding='utf-8') as text_file:
+    with open('./resources/ref.txt', 'r', encoding='utf-8') as text_file:
         prompt_text = text_file.read()
 
     # gradio api
     result = client.predict(
 		text=text,
 		text_lang=text_language,
-		ref_audio_path=file('./resource/split.wav'),
+		ref_audio_path=file('./resources/split.wav'),
 		aux_ref_audio_paths=[],
 		prompt_text=prompt_text,
 		prompt_lang="中文",
@@ -36,6 +36,7 @@ def to_speech_wav(text, language):
 		repetition_penalty=1.35,
 		api_name="/inference"
 )
+    print(result)
     return result[0]
 
 if __name__ == "__main__":

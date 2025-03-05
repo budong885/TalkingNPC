@@ -16,18 +16,21 @@ CHUNK = porcupine.frame_length  # 每帧数据大小
 
 # 阈值设置（用于检测静音）
 SILENCE_THRESHOLD = 500  # 小于该值认为是静音
-SILENCE_DURATION = 1  # 静音超过多少秒停止录音
+SILENCE_DURATION = 2  # 静音超过多少秒停止录音
+
 
 # 创建队列存储音频数据
 audio_queue = queue.Queue()
 
 recording = False  # 是否在录音状态
+high_count = 0  # 高音量计数
+working = False  # 是否在工作状态
 last_audio_time = time.time()  # 记录最后有声音的时间
 
 
 # ========== 录音线程 ==========
 def microphone_thread(speech_file_path):
-    global recording, last_audio_time
+    global recording, last_audio_time, working, high_count
 
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT,
@@ -39,28 +42,42 @@ def microphone_thread(speech_file_path):
     print("麦克风输入线程启动...")
 
     try:
+        # 计算系统白噪音的平均值
+        noise_samples = []
+        for _ in range(50):  # 采集50个样本
+            audio_data = stream.read(CHUNK)
+            audio_frame = np.frombuffer(audio_data, dtype=np.int16)
+            noise_samples.append(np.abs(audio_frame).mean())
+        noise_threshold = np.max(np.mean(noise_samples) * 1.5, 500)  # 设置阈值为白噪音平均值的1.5倍
+        print(f"系统白噪音平均值: {np.mean(noise_samples)}, 阈值设置为: {noise_threshold}")
+
         while True:
             audio_data = stream.read(CHUNK)
             audio_frame = np.frombuffer(audio_data, dtype=np.int16)
-            audio_queue.put(audio_data)
 
             # 关键词检测
             keyword_index = porcupine.process(audio_frame)
             if keyword_index == 0:  # 检测到关键词
-                print("检测到 'porcupine' 关键词! 开始录音...")
-                recording = True
-                last_audio_time = time.time()  # 记录开始录音的时间
+                print("检测到 'porcupine' 关键词! 开始运行...")
+                working = True
 
             # 如果正在录音，检测静音
-            if recording:
+            if working:
+                if recording:
+                    audio_queue.put(audio_data)
                 amplitude = np.frombuffer(audio_data, dtype=np.int16).max()  # 计算最大音量
-                if amplitude > SILENCE_THRESHOLD:
-                    last_audio_time = time.time()  # 重置静音计时
-                elif time.time() - last_audio_time > SILENCE_DURATION:  # 静音超过 X 秒
+                if amplitude > noise_threshold:
+                    high_count += 1
+                    if high_count > 2:
+                        recording = True
+                        high_count = 0
+                        last_audio_time = time.time()  # 重置静音计时
+                elif recording and time.time() - last_audio_time > SILENCE_DURATION:  # 静音超过 X 秒
                     print("检测到静音, 停止录音...")
                     recording = False
                     save_queue_to_wav(speech_file_path)
                     clear_queue()
+                    return
 
     except KeyboardInterrupt:
         print("录音线程结束...")
@@ -91,5 +108,7 @@ def clear_queue():
 
 
 if __name__ == "__main__":
-    output_filename = "./temp/output.wav"
-    microphone_thread(output_filename)
+    while True:
+        output_filename = "./temp/output.wav"
+        microphone_thread(output_filename)
+
