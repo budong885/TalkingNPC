@@ -1,7 +1,10 @@
-
 from openai import AzureOpenAI  
 import config
 import queue
+import json
+from datetime import datetime, timedelta
+import win32com.client
+import os
 
 endpoint = config.ENDPOINT_URL
 deployment = config.DEPLOYMENT_NAME
@@ -13,8 +16,111 @@ client = AzureOpenAI(
     api_key=subscription_key,  
     api_version="2024-05-01-preview",
 )
-    
-    
+
+# Define available functions
+available_functions = {
+    "get_weather": {
+        "name": "get_weather",
+        "description": "Get the current weather in a given location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                    "description": "The unit of temperature to use"
+                }
+            },
+            "required": ["location"]
+        }
+    },
+    "schedule_meeting": {
+        "name": "schedule_meeting",
+        "description": "Schedule a meeting in Outlook calendar",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": "The subject/title of the meeting"
+                },
+                "start_time": {
+                    "type": "string",
+                    "description": "Start time in format 'YYYY-MM-DD HH:MM'"
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "description": "Duration of the meeting in minutes"
+                },
+                "attendees": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of attendee email addresses"
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Meeting description/body"
+                }
+            },
+            "required": ["subject", "start_time", "duration_minutes"]
+        }
+    }
+}
+
+def get_weather(location, unit="celsius"):
+    """Mock function to get weather"""
+    return f"The weather in {location} is currently 22°{unit[0].upper()}"
+
+def schedule_meeting(subject, start_time, duration_minutes, attendees=None, body=""):
+    """Schedule a meeting in Outlook calendar"""
+    try:
+        # Create Outlook application object
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        
+        # Create a new appointment
+        appointment = outlook.CreateItem(1)  # 1 represents an appointment
+        
+        # Set meeting properties
+        appointment.Subject = subject
+        appointment.Start = datetime.strptime(start_time, "%Y-%m-%d %H:%M")
+        appointment.Duration = duration_minutes
+        appointment.Body = body
+        
+        # Add attendees if provided
+        if attendees:
+            for attendee in attendees:
+                appointment.Recipients.Add(attendee)
+        
+        # Save and send
+        appointment.Save()
+        appointment.Send()
+        
+        return f"Meeting '{subject}' has been scheduled successfully for {start_time}"
+    except Exception as e:
+        return f"Failed to schedule meeting: {str(e)}"
+
+# Function to handle function calls
+def handle_function_call(function_name, arguments):
+    if function_name == "get_weather":
+        args = json.loads(arguments)
+        return get_weather(args.get("location"), args.get("unit", "celsius"))
+    elif function_name == "schedule_meeting":
+        args = json.loads(arguments)
+        return schedule_meeting(
+            args.get("subject"),
+            args.get("start_time"),
+            args.get("duration_minutes"),
+            args.get("attendees"),
+            args.get("body", "")
+        )
+    return "Function not found"
+
 # IMAGE_PATH = "YOUR_IMAGE_PATH"
 # encoded_image = base64.b64encode(open(IMAGE_PATH, 'rb').read()).decode('ascii')
 
@@ -36,30 +142,47 @@ messages = chat_prompt
     
 # Function to handle multi-turn conversation
 def handle_conversation(user_input, queue):
-
     messages.append({
         "role": "user",
         "content": user_input
     })  
     
     response = ""
-    completion = client.chat.completions.create(  
-        model=deployment,
-        messages=messages,
-        max_tokens=800,  
-        temperature=0.7,  
-        top_p=0.95,  
-        frequency_penalty=0,  
-        presence_penalty=0,
-        stop=None,  
-        stream=True
-    )
-    for chunk in completion:
-        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-            response += chunk.choices[0].delta.content or ''
-            queue.put(chunk.choices[0].delta.content or '')
+    while True:
+        completion = client.chat.completions.create(  
+            model=deployment,
+            messages=messages,
+            functions=list(available_functions.values()),
+            function_call="auto",
+            max_tokens=800,  
+            temperature=0.7,  
+            top_p=0.95,  
+            frequency_penalty=0,  
+            presence_penalty=0,
+            stop=None,  
+            stream=True
+        )
+        
+        for chunk in completion:
+            if chunk.choices and chunk.choices[0].delta:
+                if chunk.choices[0].delta.content:
+                    response += chunk.choices[0].delta.content or ''
+                    queue.put(chunk.choices[0].delta.content or '')
+                elif chunk.choices[0].delta.function_call:
+                    function_call = chunk.choices[0].delta.function_call
+                    if function_call.name:
+                        function_name = function_call.name
+                        function_args = function_call.arguments
+                        function_response = handle_function_call(function_name, function_args)
+                        messages.append({
+                            "role": "function",
+                            "name": function_name,
+                            "content": function_response
+                        })
+                        continue
 
-
+        if not any(chunk.choices and chunk.choices[0].delta.function_call for chunk in completion):
+            break
 
     messages.append({
         "role": "assistant",
@@ -67,7 +190,6 @@ def handle_conversation(user_input, queue):
     })
 
     print(response)
-    
     queue.put(None)
 
 if __name__ == "__main__":

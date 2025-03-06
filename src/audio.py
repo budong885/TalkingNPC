@@ -7,6 +7,8 @@ import time
 import config
 import workstate
 import pvporcupine as porcupine
+import playsound
+import os
 
 # ========== 配置音频参数 ==========
 porcupine = porcupine.create(access_key=config.PICO_KEY, keyword_paths=["./resources/こんにちは_ja_windows_v3_0_0.ppn"], model_path="./resources/porcupine_params_ja.pv")
@@ -28,7 +30,7 @@ last_audio_time = time.time()  # 记录最后有声音的时间
 
 
 # ========== 录音线程 ==========
-def microphone_thread(speech_file_path, play_queue):
+def microphone_thread(speech_file_path):
     global recording, last_audio_time, working, high_count
 
     p = pyaudio.PyAudio()
@@ -47,8 +49,8 @@ def microphone_thread(speech_file_path, play_queue):
             audio_data = stream.read(CHUNK)
             audio_frame = np.frombuffer(audio_data, dtype=np.int16)
             noise_samples.append(np.abs(audio_frame).mean())
-        noise_threshold = np.max(np.mean(noise_samples) * 1.5, 500)  # 设置阈值为白噪音平均值的1.5倍
-        print(f"系统白噪音平均值: {np.mean(noise_samples)}, 阈值设置为: {noise_threshold}")
+        noise_threshold = max(np.mean(noise_samples) * 1.5, 500)  # 设置阈值为白噪音平均值的1.5倍
+        #print(f"系统白噪音平均值: {np.mean(noise_samples)}, 阈值设置为: {noise_threshold}")
 
         while True:
             audio_data = stream.read(CHUNK)
@@ -57,13 +59,16 @@ def microphone_thread(speech_file_path, play_queue):
             # 关键词检测
             keyword_index = porcupine.process(audio_frame)
             if keyword_index == 0:  # 检测到关键词
-                if workstate.is_audio_working:
+                if not workstate.is_audio_working:
                     print("检测到唤醒词! 开始运行...")
                     workstate.audio_queue.put("./resources/wakeup.wav")
                     workstate.set_audio_working(True)
                 else:
                     workstate.set_audio_working(False)
+                    workstate.set_audio_recording(False)
+                    clear_queue()
                     workstate.audio_queue.put("./resources/sleep.wav")
+                    continue
 
             # 如果正在录音，检测静音
             if workstate.is_audio_working:
@@ -110,8 +115,9 @@ def clear_queue():
     while not audio_queue.empty():
         audio_queue.get()
 
-
 if __name__ == "__main__":
+    sleep_wav_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "sleep.wav")
+    playsound.playsound(sleep_wav_path)
     while True:
         output_filename = "./temp/output.wav"
         microphone_thread(output_filename)

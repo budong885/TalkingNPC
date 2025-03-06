@@ -11,6 +11,7 @@ import re
 from datetime import datetime
 import warnings
 import workstate
+import os
 warnings.filterwarnings("ignore")  # 屏蔽所有警告
 
 
@@ -42,11 +43,15 @@ def audio_player():
             break
 
         try:
+            if task.startswith("./resources/"):
+                # Convert relative path to absolute path
+                task = os.path.join(os.path.dirname(os.path.dirname(__file__)), task[2:])
             playsound(task)
             # 让每句话之间有间隔
             time.sleep(0.5)
         except Exception as e:
             print(f'无法播放: {e}')
+            print(f'文件路径: {task}')
 
 while True:
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -56,17 +61,17 @@ while True:
     player_thread = Thread(target=audio_player)
     player_thread.start()
 
-    # audio.microphone_thread(input_speech, audio_queue)
-    # try:
-    #     # 语音识别
-    #     input_text = asr.recognize_speech_from_wav(input_speech)
-    #     print('you: ' + input_text)
-    # except Exception as e:
-    #     print(f'无法识别语音: {e}')
-    #     continue
+    audio.microphone_thread(input_speech)
+    try:
+        # 语音识别
+        input_text = asr.recognize_speech_from_wav(input_speech)
+        print('you: ' + input_text)
+    except Exception as e:
+        print(f'无法识别语音: {e}')
+        continue
 
-    print("please input:")
-    input_text = input()
+    # print("please input:")
+    # input_text = input()
 
     # 调用大模型对话
     message_queue = queue.Queue()
@@ -77,22 +82,21 @@ while True:
     while True:
         content = message_queue.get()
         if content == None:
-            print("break")
             break
         print(content, end='')
         sentence_buffer += content
 
         # 检测并处理完整句子
         # 不要一次性整段做TTS 会很慢 发现一句就生成一句
-        # sentences = split_sentences(sentence_buffer)
-        # if sentences:
-        #     for sentence in sentences[:-1]:
-        #         if sentence:
-        #             print(sentence)
-        #             speech_file = tts.to_speech_wav(sentence, "zh")
-        #             audio_queue.put(speech_file)
-        #     # 保留未完成的句子
-        #     sentence_buffer = sentences[-1]
+        sentences = split_sentences(sentence_buffer)
+        if sentences:
+            for sentence in sentences[:-1]:
+                if sentence:
+                    print(sentence)
+                    speech_file = tts.to_speech_wav(sentence, "zh")
+                    audio_queue.put(speech_file)
+            # 保留未完成的句子
+            sentence_buffer = sentences[-1]
 
     # 处理剩余缓冲区内容
     rest = sentence_buffer.strip()
