@@ -17,7 +17,7 @@ def to_speech_wav(text, language):
     result = client.predict(
 		text=text,
 		text_lang=text_language,
-		ref_audio_path=file('./resources/split.wav'),
+		ref_audio_path=file('./resources/refwav.wav'),
 		aux_ref_audio_paths=[],
 		prompt_text=prompt_text,
 		prompt_lang="中文",

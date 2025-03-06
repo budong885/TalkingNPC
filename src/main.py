@@ -10,10 +10,11 @@ from playsound import playsound
 import re
 from datetime import datetime
 import warnings
+import workstate
 warnings.filterwarnings("ignore")  # 屏蔽所有警告
 
 
-audio_queue = queue.Queue()
+audio_queue = workstate.audio_queue
 
 input_path = './temp/'
 
@@ -51,20 +52,21 @@ while True:
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
     input_speech = input_path + timestamp + '.wav'
 
-    audio.microphone_thread(input_speech)
-    try:
-        # 语音识别
-        input_text = asr.recognize_speech_from_wav(input_speech)
-        print('you: ' + input_text)
-    except Exception as e:
-        print(f'无法识别语音: {e}')
-        continue
-    #print("please input:")
-    #input_text = input()
-
     # 开启后台音频播放线程
     player_thread = Thread(target=audio_player)
     player_thread.start()
+
+    # audio.microphone_thread(input_speech, audio_queue)
+    # try:
+    #     # 语音识别
+    #     input_text = asr.recognize_speech_from_wav(input_speech)
+    #     print('you: ' + input_text)
+    # except Exception as e:
+    #     print(f'无法识别语音: {e}')
+    #     continue
+
+    print("please input:")
+    input_text = input()
 
     # 调用大模型对话
     message_queue = queue.Queue()

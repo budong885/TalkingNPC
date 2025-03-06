@@ -5,6 +5,7 @@ import threading
 import numpy as np
 import time
 import config
+import workstate
 import pvporcupine as porcupine
 
 # ========== 配置音频参数 ==========
@@ -22,14 +23,12 @@ SILENCE_DURATION = 2  # 静音超过多少秒停止录音
 # 创建队列存储音频数据
 audio_queue = queue.Queue()
 
-recording = False  # 是否在录音状态
 high_count = 0  # 高音量计数
-working = False  # 是否在工作状态
 last_audio_time = time.time()  # 记录最后有声音的时间
 
 
 # ========== 录音线程 ==========
-def microphone_thread(speech_file_path):
+def microphone_thread(speech_file_path, play_queue):
     global recording, last_audio_time, working, high_count
 
     p = pyaudio.PyAudio()
@@ -58,23 +57,28 @@ def microphone_thread(speech_file_path):
             # 关键词检测
             keyword_index = porcupine.process(audio_frame)
             if keyword_index == 0:  # 检测到关键词
-                print("检测到 'porcupine' 关键词! 开始运行...")
-                working = True
+                if workstate.is_audio_working:
+                    print("检测到唤醒词! 开始运行...")
+                    workstate.audio_queue.put("./resources/wakeup.wav")
+                    workstate.set_audio_working(True)
+                else:
+                    workstate.set_audio_working(False)
+                    workstate.audio_queue.put("./resources/sleep.wav")
 
             # 如果正在录音，检测静音
-            if working:
-                if recording:
+            if workstate.is_audio_working:
+                if workstate.is_audio_recording:
                     audio_queue.put(audio_data)
                 amplitude = np.frombuffer(audio_data, dtype=np.int16).max()  # 计算最大音量
                 if amplitude > noise_threshold:
                     high_count += 1
                     if high_count > 2:
-                        recording = True
+                        workstate.set_audio_recording(True)
                         high_count = 0
                         last_audio_time = time.time()  # 重置静音计时
-                elif recording and time.time() - last_audio_time > SILENCE_DURATION:  # 静音超过 X 秒
+                elif workstate.is_audio_recording and time.time() - last_audio_time > SILENCE_DURATION:  # 静音超过 X 秒
                     print("检测到静音, 停止录音...")
-                    recording = False
+                    workstate.set_audio_recording(False)
                     save_queue_to_wav(speech_file_path)
                     clear_queue()
                     return
