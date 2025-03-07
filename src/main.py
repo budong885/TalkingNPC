@@ -3,7 +3,7 @@ import audio
 import gpt
 import asr
 import kws
-import tts
+#import tts
 import time
 from threading import Thread
 from playsound import playsound
@@ -11,6 +11,7 @@ import re
 from datetime import datetime
 import warnings
 import workstate
+import gptnostream
 import os
 warnings.filterwarnings("ignore")  # 屏蔽所有警告
 
@@ -70,12 +71,12 @@ while True:
         print(f'无法识别语音: {e}')
         continue
 
-    # print("please input:")
-    # input_text = input()
+    #print("please input:")
+    #input_text = input()
 
     # 调用大模型对话
     message_queue = queue.Queue()
-    chat_thread = Thread(target=gpt.handle_conversation, args=(input_text, message_queue))
+    chat_thread = Thread(target=gptnostream.handle_conversation, args=(input_text, message_queue))
     chat_thread.start()
     sentence_buffer = ''
     print('pc: ', end='')
@@ -88,22 +89,22 @@ while True:
 
         # 检测并处理完整句子
         # 不要一次性整段做TTS 会很慢 发现一句就生成一句
-        sentences = split_sentences(sentence_buffer)
-        if sentences:
-            for sentence in sentences[:-1]:
-                if sentence:
-                    print(sentence)
-                    speech_file = tts.to_speech_wav(sentence, "zh")
-                    audio_queue.put(speech_file)
-            # 保留未完成的句子
-            sentence_buffer = sentences[-1]
+        # sentences = split_sentences(sentence_buffer)
+        # if sentences:
+        #     for sentence in sentences[:-1]:
+        #         if sentence:
+        #             #print(sentence)
+        #             speech_file = tts.to_speech_wav(sentence, "zh")
+        #             audio_queue.put(speech_file)
+        #     # 保留未完成的句子
+        #     sentence_buffer = sentences[-1]
 
     # 处理剩余缓冲区内容
     rest = sentence_buffer.strip()
     if rest:
         print(rest)
-        speech_file = tts.to_speech_wav(rest, "zh")
-        audio_queue.put(speech_file)
+        #speech_file = tts.to_speech_wav(rest, "zh")
+        #audio_queue.put(speech_file)
         pre_message += rest
     
     # 等待对话结束

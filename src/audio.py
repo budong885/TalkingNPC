@@ -11,7 +11,7 @@ import playsound
 import os
 
 # ========== 配置音频参数 ==========
-porcupine = porcupine.create(access_key=config.PICO_KEY, keyword_paths=["./resources/こんにちは_ja_windows_v3_0_0.ppn"], model_path="./resources/porcupine_params_ja.pv")
+porcupine = porcupine.create(access_key=config.PICO_KEY, keyword_paths=["./resources/こんにちは_ja_windows_v3_0_0.ppn", "./resources/さようなら_ja_windows_v3_0_0.ppn"], model_path="./resources/porcupine_params_ja.pv")
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000  # 采样率 16kHz
@@ -63,12 +63,12 @@ def microphone_thread(speech_file_path):
                     print("检测到唤醒词! 开始运行...")
                     workstate.audio_queue.put("./resources/wakeup.wav")
                     workstate.set_audio_working(True)
-                else:
-                    workstate.set_audio_working(False)
-                    workstate.set_audio_recording(False)
-                    clear_queue()
-                    workstate.audio_queue.put("./resources/sleep.wav")
-                    continue
+            elif keyword_index == 1:
+                workstate.set_audio_working(False)
+                workstate.set_audio_recording(False)
+                clear_queue()
+                workstate.audio_queue.put("./resources/sleep.wav")
+                continue
 
             # 如果正在录音，检测静音
             if workstate.is_audio_working:

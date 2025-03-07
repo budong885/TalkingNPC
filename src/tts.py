@@ -12,8 +12,12 @@ def to_speech_wav(text, language):
 
     with open('./resources/ref.txt', 'r', encoding='utf-8') as text_file:
         prompt_text = text_file.read()
+        
 
+        
     # gradio api
+    print()
+    print("生成语音中...")
     result = client.predict(
 		text=text,
 		text_lang=text_language,
@@ -36,7 +40,8 @@ def to_speech_wav(text, language):
 		repetition_penalty=1.35,
 		api_name="/inference"
 )
-    print(result)
+    #print(result)
+    print("语音生成完成")
     return result[0]
 
 if __name__ == "__main__":

@@ -16,12 +16,25 @@ client = AzureOpenAI(
     api_key=subscription_key,  
     api_version="2024-05-01-preview",
 )
-
+# Define the function to query weather
+def query_weather(location):
+    """Query weather information using a weather API"""
+    try:
+        url = f"https://wttr.in/{location}?format=j1"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        current = data["current_condition"][0]
+        return f"{location}的当前温度为{current['temp_C']}度。"
+    except Exception as e:
+        return {"error": str(e)}
+    
 # Define available functions
 available_functions = {
     "schedule_meeting": {
         "name": "schedule_meeting",
-        "description": "安排一个会议，会议参数可为空，如果没有提供，使用默认",
+        "description": "安排一个会议，参数可为空",
         "parameters": {
             "type": "object",
             "properties": {
@@ -45,7 +58,21 @@ available_functions = {
                     "description": "参与者姓名，由提问者给出，需要判断"
                 },
             },
-            "required": ["start_time", "attendees"]
+            "required": ["attendees"]
+        }
+    },
+    "query_weather": {
+        "name": "query_weather",
+        "description": "查询指定地点的天气信息",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "地点名称"
+                }
+            },
+            "required": ["location"]
         }
     }
 }
@@ -54,7 +81,14 @@ def schedule_meeting(subject = "special meeting", start_time = "", duration_minu
     """Schedule a meeting using Microsoft Graph API"""
     try:
         # Find attendees' email addresses using Microsoft Graph API
-        start_time = start_time or datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        try:
+            start_time = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
+            if start_time < datetime.utcnow():
+                start_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        except Exception as e:
+            print(f"Failed to parse start time: {str(e)}")
+            start_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
         attendee_emails = []
         if attendees:
             for attendee in attendees:
@@ -137,6 +171,13 @@ def handle_function_call(function_name, arguments):
             )
         else:
             return schedule_meeting()
+    elif function_name == "query_weather":
+        if arguments:
+            args = json.loads(arguments)
+            print(f"Function Arguments: {args}")
+            return query_weather(args.get("location", "Beijing"))
+        else:
+            return query_weather("Beijing")
     return "Function not found"
 
 # IMAGE_PATH = "YOUR_IMAGE_PATH"
@@ -179,25 +220,24 @@ def handle_conversation(user_input, queue):
         frequency_penalty=0,  
         presence_penalty=0,
         stop=None,  
-        stream=True
+        stream=False
         )
-
         final_tool_calls = {}
-        for chunk in completion:
-            if chunk.choices and chunk.choices[0].delta:
-                if chunk.choices[0].delta.content:
-                    response += chunk.choices[0].delta.content or ''
-                    queue.put(chunk.choices[0].delta.content or '')
-                if chunk.choices[0].delta.function_call:
-                    function_call = chunk.choices[0].delta.function_call
-                    if function_call.name:
-                        #print(f"Function Call: {function_call}")
-                        if function_call.name not in final_tool_calls:
-                            final_tool_calls[function_call.name] = function_call
-                        final_tool_calls[function_call.name].arguments += function_call.arguments
+
+        if completion.choices and completion.choices[0].message:
+            if completion.choices[0].message.content:
+                response += completion.choices[0].message.content or ''
+                queue.put(completion.choices[0].message.content or '')
+            if completion.choices[0].message.function_call:
+                function_call = completion.choices[0].message.function_call
+                if function_call.name:
+                    if function_call.name not in final_tool_calls:
+                        final_tool_calls[function_call.name] = function_call
+                        final_tool_calls[function_call.name].arguments = function_call.arguments
 
         if len(final_tool_calls) > 0:
             for tool_call in final_tool_calls.values():
+                print(f"Tool Call: {tool_call.arguments}")
                 response += handle_function_call(tool_call.name, tool_call.arguments)
                 queue.put(response)
 
